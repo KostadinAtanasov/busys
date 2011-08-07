@@ -1,0 +1,512 @@
+#!/bin/sh
+#
+# Start the build process.
+
+###########################################################
+# Include some usefull functions.
+###########################################################
+. $busys_install_dir/utils
+
+###########################################################
+# Global variables with their defaults.
+###########################################################
+target_dir="."
+target_dirs=""
+target_dirs_count=0
+target_type="e"
+force_target_type=""
+build_type=""
+force_build_type=""
+clean_target=""
+
+###########################################################
+# Parse the command line.
+###########################################################
+while [ $# != 0 ];
+do
+    case "$1" in
+        "-d")
+        shift
+        new_target_dir=${1%/}
+        target_dirs=$target_dirs" "$new_target_dir
+        target_dirs_count=$((target_dirs_count+1))
+        echo "target_dirs set to: $target_dirs."
+        ;;
+        "-t")
+        shift
+        target_type=$1
+        force_target_type=$1
+        echo "target_type set to: $force_target_type."
+        ;;
+        "release")
+        echo "build_type set to: $1."
+        build_type=$1
+        force_build_type=$1
+        ;;
+        "debug")
+        echo "build_type set to: $1."
+        build_type=$1
+        force_build_type=$1
+        ;;
+        "clean")
+        echo "build_type set to: $1."
+        build_type=$1
+        force_build_type=$1
+        clean_target=$2
+        shift
+        if [ $# = 0 ];
+        then
+            break
+        fi
+        ;;
+        "-b")
+        shift
+        build_type=$1
+        force_build_type=$1
+        ;;
+        *)
+        ;;
+    esac
+    shift
+done
+
+if [ $target_dirs_count = 1 ];
+then
+    target_dir=$target_dirs
+fi
+
+###########################################################
+# Include global configuration file.
+###########################################################
+if [ -f $busys_install_dir/busys_config ];
+then
+    . $busys_install_dir/busys_config
+fi
+
+###########################################################
+# Include project global configuration file.
+###########################################################
+if [ -f ./busys_config ];
+then
+    . ./busys_config
+fi
+
+###########################################################
+# Include target_dir specific configuration files.
+###########################################################
+if [ -f $target_dir/busys_config ];
+then
+    if [ $target_dir != "." ];
+    then
+	# Reset the build target dependencies.
+	executable_dependencies=""
+	library_dependencies=""
+	sharedobject_dependencies=""
+        . $target_dir/busys_config
+    fi
+fi
+if [ -f $target_dir/busys_projects ];
+then
+    . $target_dir/busys_projects
+fi
+if [ -f $target_dir/busys_tocompile ];
+then
+    . $target_dir/busys_tocompile
+else
+    echo "========================================================"
+    echo "For any kind of compilation it is obligatorish "
+    echo "to have \"busys_tocompile\" file in target directory!"
+    echo "========================================================"
+    exit 1
+fi
+
+###########################################################
+# Check for obligatorish variables.
+###########################################################
+if [ ! -n "$build_type" ];
+then
+    echo "It is obligatorish to provide build_type(debug, release, etc)."
+    exit 1
+fi
+
+###########################################################
+# Let some command line options overwrite same from configuration files.
+###########################################################
+if [ -n "$force_target_type" ];
+then
+    target_type=$force_target_type
+fi
+if [ -n "$force_build_type" ];
+then
+    build_type=$force_build_type
+fi
+
+###########################################################
+# Determin what we are going to build(executable, library, shared object).
+###########################################################
+echo
+echo "========================================================"
+case "$target_type" in
+    "e")
+    echo "building executable."
+    files_tocompile=$files_for_executable
+    ;;
+    "l")
+    echo "building archive library."
+    files_tocompile=$files_for_library
+    ;;
+    "s")
+    echo "building shared object library."
+    files_tocompile=$files_for_sharedobject
+    ;;
+    *)
+    echo "Error target type must be defined."
+    exit 1
+    ;;
+esac
+
+###########################################################
+# Construct strings for output directories.
+###########################################################
+objects_output_dir=""
+library_output_dir=""
+shared_object_output_dir=""
+executable_output_dir=""
+subdir_target=""
+if [ $build_type = "clean" ];
+then
+    subdir_target=$clean_target
+else
+    subdir_target=$build_type
+fi
+if [ -n "$module_output_dir" ];
+then
+    objects_output_dir=$output_dir/objects/$subdir_target/$module_output_dir
+    library_output_dir=$output_dir/libs/$subdir_target/$module_output_dir
+    executable_output_dir=$output_dir/run/$subdir_target/$module_output_dir
+    shared_object_output_dir=$output_dir/sharedobjects/$subdir_target
+else
+    objects_output_dir=$output_dir/objects/$subdir_target
+    library_output_dir=$output_dir/libs/$subdir_target
+    executable_output_dir=$output_dir/run/$subdir_target
+fi
+
+###########################################################
+# Are we just cleaning.
+###########################################################
+if [ $build_type = "clean" ];
+then
+    echo "Cleaning..."
+    echo "clean_target=$clean_target"
+    echo "output_dir=$output_dir"
+    echo "module_output_dir=$module_output_dir"
+    echo "objects_output_dir=$objects_output_dir"
+    echo "library_output_dir=$library_output_dir"
+    echo "shared_object_output_dir=$shared_object_output_dir"
+    echo "executable_output_dir=$executable_output_dir"
+    if [ -d "$objects_output_dir" ];
+    then
+        rm -rf $objects_output_dir
+    fi
+    if [ -d "$library_output_dir" ];
+    then
+        rm -rf $library_output_dir
+    fi
+    if [ -d "$shared_object_output_dir" ];
+    then
+        rm -rf $shared_object_output_dir
+    fi
+    if [ -d $executable_output_dir ];
+    then
+        rm -rf $executable_output_dir
+    fi
+    echo "Clean done."
+    exit 0
+fi
+
+###########################################################
+# Create output directories if they not exist.
+###########################################################
+echo
+echo "========================================================"
+echo "Checking existence of output directories."
+if [ ! -d $objects_output_dir ];
+then
+    mkdir -p -m $output_dirs_mode $objects_output_dir
+fi
+if [ $target_type = "l" ];
+then
+    if [ ! -d $library_output_dir ];
+    then
+        mkdir -p -m $output_dirs_mode $library_output_dir
+    fi
+fi
+if [ $target_type = "s" ];
+then
+    if [ ! -d $shared_object_output_dir ];
+    then
+        mkdir -p -m $output_dirs_mode $shared_object_output_dir
+    fi
+fi
+if [ $target_type = "e" ];
+then
+    if [ ! -d $executable_output_dir ];
+    then
+        mkdir -p -m $output_dirs_mode $executable_output_dir
+    fi
+fi
+echo "All needed outputs directories created."
+
+###########################################################
+# The build loops.
+###########################################################
+
+###########################################################
+# Check for other projects(directories) dependencies.
+###########################################################
+need_to_build_dependencies=0
+dependencies_list=""
+if [ -n "$executable_dependencies" ];
+then
+    need_to_build_dependencies=1
+    dependencies_list="$executable_dependencies"
+fi
+if [ -n "$library_dependencies" ];
+then
+    need_to_build_dependencies=1
+    dependencies_list="$library_dependencies"
+fi
+if [ -n "$sharedobject_dependencies" ];
+then
+    need_to_build_dependencies=1
+    dependencies_list="$sharedobject_dependencies"
+fi
+if [ $need_to_build_dependencies != 0 ];
+then
+    echo
+    echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    echo "========================================================"
+    echo "Building dependencies..."
+    echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    for d in $dependencies_list;
+    do
+        num_of_dependencies=$((num_of_dependencies+1))
+        echo
+        echo "========================================================"
+        echo "--------------------------------------------------------"
+        echo "Building dependency \"$d\""
+        my_cwd=`pwd`
+        cd $d
+        sh $0 $build_type
+        if [ $? != 0 ];
+        then
+            echo "Failed in building dependency \"$d\""
+            exit 1
+        else
+            echo "Debendency \"$d\" built"
+            echo "--------------------------------------------------------"
+        fi
+        cd $my_cwd
+        echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+        echo "========================================================"
+        echo "++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    done
+    echo "$num_of_dependencies dependencies built."
+fi
+
+###########################################################
+# Compile all needed files to object files.
+###########################################################
+echo
+echo "========================================================"
+echo "Building objects..."
+error_in_compilation=""
+type_flags=$(eval "echo \$${build_type}_flags")
+build_objects_count=0
+for obj in $files_tocompile;
+do
+    need_to_compile=1
+    dep=`find_includes $target_dir/$obj $dependency_check_dirs`
+    out_obj=`basename $obj`
+    out_obj=${out_obj%.*}$objfile_extension
+    stamp_tocheck=""
+    out_obj=$objects_output_dir/$out_obj
+    if [ -f $out_obj ];
+    then
+        out_obj_stat=`get_mtime $out_obj`
+        target_obj_stat=`get_mtime $target_dir/$obj`
+        stamp_tocheck=$target_dir/$obj
+        if [ $out_obj_stat -gt $target_obj_stat ];
+        then
+            stamp_tocheck=$out_obj
+            check_modify_time $stamp_tocheck $dep
+            if [ $? = 0 ];
+            then
+                need_to_compile=0
+            fi
+        else
+            need_to_compile=1
+        fi
+    fi
+    if [ $need_to_compile != 0 ];
+    then
+        obj_cmd=$compiler" "$only_compile" "$compile_options
+        obj_cmd=$obj_cmd" "$type_flags
+        for id in $include_dirs;
+        do
+            obj_cmd=$obj_cmd" -I$id/"
+        done
+        obj_cmd=$obj_cmd" "$name_output" "$out_obj
+        compile_object $target_dir/$obj $obj_cmd
+        compile_object_error=$?
+        if [ $compile_object_error != 0 ];
+        then
+            error_in_compilation=$compile_object_error
+        else
+            build_objects_count=$((build_objects_count+1))
+        fi
+    fi
+done
+echo "Built $build_objects_count objects."
+
+###########################################################
+# Link to archive library.
+###########################################################
+if [ $target_type = "l" ];
+then
+    need_to_build_library=0
+    if [ -n "$error_in_compilation" ];
+    then
+        echo "No creating library because of compilation error(s)."
+        exit $error_in_compilation
+    fi
+    if [ $build_objects_count -gt 0 ];
+    then
+        need_to_build_library=1
+    fi
+    if [ ! -f $library_output_dir/lib${module_name}$libfile_extension ];
+    then
+        need_to_build_library=1
+    fi
+    if [ $need_to_build_library -gt 0 ];
+    then
+        echo "Creaating archive library lib${module_name}$libfile_extension ..."
+        cmd_line=$make_library" "$library_options
+        cmd_line=$cmd_line" "$library_output_dir/lib${module_name}$libfile_extension
+        cmd_line=$cmd_line" "$objects_output_dir/*$objfile_extension
+        $cmd_line
+        echo "Creating library done."
+    else
+        echo "lib${module_name}$libfile_extension up to date"
+    fi
+fi
+
+###########################################################
+# Link to shared object library.
+###########################################################
+if [ $target_type = "s" ];
+then
+    echo "going to create shared object"
+fi
+
+###########################################################
+# Link to executable file.
+###########################################################
+if [ $target_type = "e" ];
+then
+    if [ -n "$error_in_compilation" ];
+    then
+        echo "No building executable because of compilation error(s)."
+        exit $error_in_compilation
+    fi
+    echo
+    echo "========================================================"
+    echo "Building executable..."
+    dep=`find_includes $main_executable_file $include_dirs`
+    if [ -n "$program_name" ];
+    then
+        out_obj=$program_name
+    else
+        out_obj=`echo $main_executable_file | awk -F/ '{print $NR}'`
+        out_obj=${out_obj%.*}
+    fi
+    if [ -n "$module_output_dir" ];
+    then
+        out_obj=$output_dir/run/$build_type/$out_obj/$module_output_dir
+    else
+        out_obj=$output_dir/run/$build_type/$out_obj
+    fi
+    need_to_build_executable=0
+    if [ ! -f $out_obj ];
+    then
+        need_to_build_executable=1
+    else
+        out_obj_mtime=`get_mtime $out_obj`
+        for additional_dependency in $additional_timestampers;
+        do
+            if [ $out_obj_mtime -lt `get_mtime $additional_dependency` ];
+            then
+                need_to_build_executable=1
+                break
+            fi
+        done
+        if [ $need_to_build_executable = 0 ];
+        then
+            if [ $out_obj_mtime -lt `get_mtime $target_dir/$main_executable_file` ];
+            then
+                need_to_build_executable=1
+            else
+                check_modify_time $out_obj $dep $objects_output_dir/*$objfile_extension
+                if [ $? != 0 ];
+                then
+                    need_to_build_executable=1
+                else
+                    echo "Executable file up to date"
+                    exit 0
+                fi
+            fi
+        fi
+    fi
+    if [ $need_to_build_executable != 0 ];
+    then
+        link_to_this=""
+        for d in $dependencies_list;
+        do
+            dep_output=""
+# Tree sed commands to get output directory, build_type and module name
+# from dependencys busys_config file, and remove their quotes if present.
+            tmp_dep_output=`sed -n 's/^output_dir="\{0,1\}\(.*[^"]\)"\{0,1\}/\1/p' $d/busys_config`
+            tmp_dep_type=`sed -n 's/^target_type="\{0,1\}\(.*[^"]\)"\{0,1\}/\1/p' $d/busys_config`
+            tmp_dep_mname=`sed -n 's/^module_name="\{0,1\}\(.*[^"]\)"\{0,1\}/\1/p' $d/busys_config`
+# Get around fact that gcc does not understand ~ as /home/usarename.
+            tmp_dep_output=`echo $tmp_dep_output | sed "s%~%"$HOME"%"`
+            case $tmp_dep_type in
+                "l")
+                tmp_dep_output="$tmp_dep_output/libs/$build_type/lib"
+                tmp_dep_output=${tmp_dep_output}${tmp_dep_mname}$libfile_extension
+                ;;
+                "s")
+                ;;
+                *)
+                echo "Unsupported dependency type: \"$d\" -> \"$tmp_dep_type\""
+                exit 1
+                ;;
+            esac
+            link_to_this=$link_to_this" "$tmp_dep_output
+        done
+        link_cmd=$linker" "$linker_name_output" "$out_obj
+        link_cmd=$link_cmd" "$objects_output_dir/*$objfile_extension
+        link_cmd=$link_cmd" "$library_dirs" "$linker_add_library
+        link_cmd=$link_cmd" "$linker_flags
+        $link_cmd
+        if [ $? = 0 ];
+        then
+            echo "Building executable done."
+        fi
+        if [ -n "$executable_postbuild_hook" ];
+        then
+            echo "Running postbuild hook for executable..."
+            $executable_postbuild_hook
+        fi
+    fi
+fi

@@ -1,0 +1,45 @@
+# Some standard predefine global configuration options
+# for busys build system. They will be overwritten by
+# what's come from specific project busys_config file.
+
+include_dirs=""
+library_dirs=
+module_output_dir=""
+dependency_check_dirs="."
+additional_timestampers=""
+
+# Compilation options.
+compiler="gcc"
+only_compile="-c"
+name_output="-o"
+objfile_extension=".o"
+
+compile_options="-Wall -Werror -DPOSIX -D_XOPEN_SOURCE=700"
+
+commonflags=""
+debug_flags="-DDEBUG -g3 "$commonflags
+release_flags="-DNDEBUG -O2 "$commodflags
+
+# Linker options.
+linker="gcc"
+linker_name_output="-o"
+linker_flags=""
+
+linker_add_library=""
+
+# Creating archive library options.
+make_library="ar"
+library_options="crs"
+libfile_extension=".a"
+
+# Creating shared object options.
+make_shared_object="gcc -shared"
+shared_object_options=""
+name_shared_object=""
+
+# Cleaning the build target.
+dirs_to_clean=""
+files_to_clean=""
+
+# Additional configuration.
+output_dirs_mode=770

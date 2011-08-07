@@ -1,0 +1,207 @@
+#!/bin/sh
+#
+# Script with various utilities functions.
+
+# Get file last modifie time.
+get_mtime()
+{
+    temp_t=""
+    stat -c %Y $@ 2>/dev/null 1>/dev/null
+    if [ $? = 0 ];
+    then
+        temp_t=`stat -c %Y $@ | awk -F. '{print $1}'`
+    else
+        stat -f %m $@ 2>/dev/null 1>/dev/null
+        if [ $? = 0 ];
+        then
+            temp_t=`stat -f %m $@`
+        else
+            tmp=`stat -Rm $@`
+            temp_t=`echo $tmp | awk '{print $NF}'`
+        fi
+    fi
+    echo $temp_t
+}
+
+# Return 1 if argument 1 is contain in array given as arument 2.
+array_find()
+{
+    ret=0
+    element=$1
+    shift
+    for e in $@;
+    do
+        if [ $element = $e ];
+        then
+            ret=1
+            break
+        fi
+    done
+    return $ret
+}
+
+# Remove argument 1 from array given as next arguments, echo
+# result on stdout.
+array_remove()
+{
+    element=$1
+    shift
+    result=""
+    for e in $@;
+    do
+        if [ $e != $element ];
+        then
+            result=$result" "$e
+        fi
+    done
+    echo $result
+}
+
+# Helper for find_includes which do finding of includes of
+# one file and echo result on stdout.
+helper_find_includes()
+{
+    file=$1
+    shift
+    inc_names=`sed -n 's/^\#[ ]*include[ ]*[<"]\(.*\)[>"].*/\1/p' $file 2>/dev/null`
+    inc_names=`echo $inc_names | tr ' ' '\n' | sort -u`
+
+    includes=""
+    for f in $inc_names;
+    do
+# First check if file is in current directory.
+        if [ -f $f ];
+        then
+            includes=$includes" "$f
+            continue
+        fi
+# Now check is file in some of provided include paths.
+        for d in $@;
+        do
+            if [ -f $d/$f ];
+            then
+                includes=$includes" "$d/$f
+                break
+            fi
+        done
+    done
+    echo $includes
+}
+
+# Find all includes from file given as argument 1. Only files
+# in the directories given as next arguments are counted.
+# The result is echo to stdout.
+find_includes()
+{
+    file=$1
+    shift
+    parsed=""
+    toparse=""
+
+# First phase - find all direct includes and make array of
+# their full path names.
+    direct_includes=`helper_find_includes $file $@`
+    found=$direct_includes
+
+# Second phase - find includes of direct includes.
+    for f in $direct_includes;
+    do
+        array_find $f $parsed
+        if [ $? = 0 ];
+        then
+            thisincludes=`helper_find_includes $f $@`
+            parsed=$parsed" "$f
+            toparse=`echo $toparse $thisincludes | tr ' ' '\n' | sort | uniq`
+            toparse=`echo $toparse $parsed $parsed | tr ' ' '\n' | sort | uniq -u`
+        fi
+    done
+# Last phase - find includes of includes and their includes and so on.
+    while [ -n "$toparse" ];
+    do
+        tmp=""
+        t=`echo $toparse | awk '{print $1}'`
+        array_find $t $parsed
+        if [ $? = 0 ];
+        then
+            parsed=$parsed" "$t
+        fi
+        ti=`helper_find_includes $t $@`
+        ti=`echo $ti $parsed $parsed | tr ' ' '\n' | sort | uniq -u`
+        toparse=`array_remove $t $toparse`
+        toparse=`echo $toparse $ti | tr ' ' '\n' | sort | uniq`
+    done
+    echo $parsed
+}
+
+
+# Check if some of the files given in array $2 is modified
+# after the file given as argument $1. Returns 1 if modified.
+check_modify_time()
+{
+    flag=0
+    filetime=`get_mtime $1`
+    shift
+    for f in $@;
+    do
+        t=`get_mtime $f`
+        if [ $t -gt $filetime ];
+        then
+            flag=1
+            break
+        fi
+    done
+    return $flag
+}
+
+# Create output directories if needed. First parameter is the master
+# output directory, second is the main subdirectory, then the rest
+# are subdirectories of the second which need to be created.
+# Returns 0 if all directories already exist, otherwise returns
+# 1 if first of subdirectories is created, 2 for second, etc.
+check_output_dirs()
+{
+    ret=0
+    counter=0
+    md_name=$2
+    output_dir=$1
+    shift
+    shift
+    if [ ! -d $output_dir ];
+    then
+        echo "Creating output directory: $output_dir"
+        mkdir -p -m $output_dirs_mode $output_dir
+        ret=1
+    fi
+    for sd in $@;
+    do
+        if [ ! -d $output_dir/$sd/$md_name ];
+        then
+            echo "Creating output subdirectory: $output_dir/$sd/$md_name"
+            mkdir -p -m $output_dirs_mode $output_dir/$sd/$md_name
+            if [ $ret = 0 ];
+            then
+                counter=$((counter+1))
+                ret=$((ret+counter))
+            fi
+        fi
+    done
+    return $ret
+}
+
+
+# Compilation utilities.
+
+compile_object()
+{
+    obj_tocompile=$1
+    shift
+    echo
+    echo "-------------------------------------------------------"
+    echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    echo "Compiling $obj_tocompile"
+    $@ $obj_tocompile
+    err=$?
+    echo "+++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    echo "-------------------------------------------------------"
+    return $err
+}
