@@ -390,7 +390,7 @@ then
     fi
     if [ $need_to_build_library -gt 0 ];
     then
-        echo "Creaating archive library lib${module_name}$libfile_extension ..."
+        echo "Creating archive library lib${module_name}$libfile_extension ..."
         cmd_line=$make_library" "$library_options
         cmd_line=$cmd_line" "$library_output_dir/lib${module_name}$libfile_extension
         cmd_line=$cmd_line" "$objects_output_dir/*$objfile_extension
