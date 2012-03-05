@@ -193,7 +193,7 @@ check_output_dirs()
 
 compile_object()
 {
-    obj_tocompile=$1
+    obj_tocompile=`realpath $1`
     shift
     echo
     echo "-------------------------------------------------------"
