@@ -362,6 +362,9 @@ do
         if [ $compile_object_error != 0 ];
         then
             error_in_compilation=$compile_object_error
+            if [ "x$busys_stop_on_error" != "x" ]; then
+                break
+            fi
         else
             build_objects_count=$((build_objects_count+1))
         fi
